@@ -2,6 +2,47 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.6.0] - 2025-01-27
+
+### Major UX Redesign
+- **Application Title**: Changed main heading from "IP Address Generator" to "IP Address Test Data"
+- **Reference Data Section**: Created dedicated section for file uploads with comprehensive status display
+  - Shows loaded files, detected formats, IP range counts, and country availability
+  - Clear indication when MaxMind format requires additional files
+  - Visual status indicators for file processing and completion
+- **Tab Interface**: Redesigned mode selection as proper tabs with clear visual hierarchy
+  - "Generate IP Addresses" and "Lookup IP Countries" now appear as distinct tabs
+  - Tab content is hidden until reference data is successfully loaded
+  - Disabled states for tabs that require specific data types
+
+### New Feature: Repetition Distribution
+- **IP Address Repetition Control**: Added sophisticated repetition distribution system
+  - Specify how many times IP addresses should be repeated in generated files
+  - Configure percentage distribution for different repetition counts (e.g., 25% single use, 40% used 10 times)
+  - Dynamic rule management with add/remove functionality
+  - Automatic percentage calculation ensuring total equals 100%
+  - Random distribution of repetitions throughout the generated file
+- **Smart Defaults**: New repetition rules default to remaining percentage to reach 100%
+- **Validation**: Real-time validation prevents invalid configurations and ensures 100% total
+
+### Enhanced User Experience
+- **Progressive Disclosure**: Main functionality only appears after reference data is loaded
+- **Improved Visual Hierarchy**: Clear separation between data loading and processing functions
+- **Better Status Feedback**: Comprehensive file status display with format detection
+- **Responsive Layout**: Enhanced mobile-friendly design with proper spacing and typography
+
+### Technical Improvements
+- **File Management**: Enhanced tracking of loaded files with names and formats
+- **State Management**: Added repetition rule state management with unique IDs
+- **Validation Logic**: Comprehensive validation for both country profiles and repetition rules
+- **Performance**: Optimized rendering with conditional display based on data availability
+
+### User Interface Enhancements
+- **Card-Based Layout**: Organized content into distinct cards for better visual separation
+- **Tab Navigation**: Professional tab interface with hover states and active indicators
+- **Status Indicators**: Color-coded status messages and progress indicators
+- **Interactive Controls**: Enhanced +/- buttons and input validation for all numeric fields
+
 ## [1.5.1] - 2025-01-27
 
 ### Fixed
