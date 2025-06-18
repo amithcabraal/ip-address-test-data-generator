@@ -2,6 +2,32 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.6.1] - 2025-01-27
+
+### Fixed
+- **Reference Data Display**: Fixed conditional rendering logic for file status and missing file prompts
+  - Corrected MaxMind format detection to properly show when second file is required
+  - Fixed tab visibility - tabs now properly appear after reference data is successfully loaded
+  - Enhanced file tracking with proper filename storage and display
+  - Improved status messages to clearly indicate file processing states
+
+### Enhanced
+- **File Status Feedback**: Improved visual feedback for file upload and processing
+  - Better indication when MaxMind format requires additional files
+  - Clear display of uploaded file names with success indicators
+  - Enhanced status messages showing format detection and data statistics
+  - Proper warning messages for missing required files
+
+### Technical Improvements
+- **State Management**: Fixed data loading detection logic
+  - Corrected `isDataLoaded()` function to properly validate all file types
+  - Enhanced file tracking with separate filename storage
+  - Improved conditional rendering based on actual data availability
+- **User Interface**: Better visual hierarchy and status indication
+  - Fixed tab content visibility based on data loading state
+  - Enhanced file status display with proper formatting
+  - Improved error handling and user feedback
+
 ## [1.6.0] - 2025-01-27
 
 ### Major UX Redesign
