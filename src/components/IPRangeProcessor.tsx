@@ -9,7 +9,7 @@ interface IPRange {
   country?: string;
   countryCode?: string;
   geonameId?: string;
-  startLong?: number;
+  startLong?: number; // Add cached long values for performance
   endLong?: number;
 }
 
@@ -56,7 +56,7 @@ interface CountryProfile {
 
 interface RepetitionRule {
   id: string;
-  repetitions: number;
+  count: number;
   percentage: number;
 }
 
@@ -72,8 +72,7 @@ export const IPRangeProcessor = () => {
   const [selectedCountry, setSelectedCountry] = useState<string>('');
   const [maxmindLocations, setMaxmindLocations] = useState<Map<string, MaxMindLocation>>(new Map());
   const [maxmindBlocks, setMaxmindBlocks] = useState<MaxMindBlock[]>([]);
-  const [uploadedFiles, setUploadedFiles] = useState<{locations?: boolean, blocks?: boolean}>({});
-  const [loadedFileNames, setLoadedFileNames] = useState<string[]>([]);
+  const [uploadedFiles, setUploadedFiles] = useState<{locations?: boolean, blocks?: boolean, locationsFile?: string, blocksFile?: string}>({});
   
   // New state for IP lookup feature
   const [mode, setMode] = useState<'generate' | 'lookup'>('generate');
@@ -92,13 +91,15 @@ export const IPRangeProcessor = () => {
 
   // New state for repetition distribution
   const [repetitionRules, setRepetitionRules] = useState<RepetitionRule[]>([
-    { id: '1', repetitions: 1, percentage: 100 }
+    { id: '1', count: 1, percentage: 100 }
   ]);
   const [nextRepetitionId, setNextRepetitionId] = useState(2);
 
+  // Track uploaded file names
+  const [uploadedFileNames, setUploadedFileNames] = useState<string[]>([]);
+
   const onDrop = useCallback((acceptedFiles: File[]) => {
     setProcessing(true);
-    const fileNames: string[] = [];
     
     const processFile = async (file: File, _index: number) => {
       return new Promise<void>((resolve, reject) => {
@@ -106,20 +107,19 @@ export const IPRangeProcessor = () => {
         const fileName = file.name.toLowerCase();
         
         setProcessingFile(`Processing ${file.name}...`);
-        fileNames.push(file.name);
 
         reader.onload = (e) => {
           try {
             const content = e.target?.result as string;
             
             if (fileName.endsWith('.json')) {
-              handleJSONFile(content);
+              handleJSONFile(content, file.name);
             } else if (fileName.includes('geolite2-country-locations') || fileName.includes('locations')) {
-              handleMaxMindLocationsFile(content, fileName);
+              handleMaxMindLocationsFile(content, file.name);
             } else if (fileName.includes('geolite2-country-blocks') || fileName.includes('blocks')) {
-              handleMaxMindBlocksFile(content, fileName);
+              handleMaxMindBlocksFile(content, file.name);
             } else if (fileName.endsWith('.csv')) {
-              handleCSVFile(content);
+              handleCSVFile(content, file.name);
             }
             resolve();
           } catch (error) {
@@ -140,7 +140,6 @@ export const IPRangeProcessor = () => {
           // Small delay to show processing state
           await new Promise(resolve => window.setTimeout(resolve, 300));
         }
-        setLoadedFileNames(fileNames);
       } catch (error) {
         alert(error instanceof Error ? error.message : 'An error occurred while processing files');
       } finally {
@@ -164,7 +163,7 @@ export const IPRangeProcessor = () => {
     return rangesWithCache.sort((a, b) => a.startLong! - b.startLong!);
   };
 
-  const handleJSONFile = (content: string) => {
+  const handleJSONFile = (content: string, fileName: string) => {
     const data = JSON.parse(content);
     const ranges = data.data.map((range: string[]) => ({
       start: range[0],
@@ -178,11 +177,12 @@ export const IPRangeProcessor = () => {
     setFileType('json');
     setAvailableCountries([]);
     setSelectedCountry('');
+    setUploadedFileNames([fileName]);
     resetMaxMindData();
     resetProfiles();
   };
 
-  const handleCSVFile = (content: string) => {
+  const handleCSVFile = (content: string, fileName: string) => {
     const lines = content.trim().split('\n');
     const csvData: CSVRow[] = [];
     const countriesMap = new Map<string, string>();
@@ -228,11 +228,12 @@ export const IPRangeProcessor = () => {
     setFileType('csv');
     setSelectedCountry('');
     setIpRanges([]);
+    setUploadedFileNames([fileName]);
     resetMaxMindData();
     resetProfiles();
   };
 
-  const handleMaxMindLocationsFile = (content: string, _fileName: string) => {
+  const handleMaxMindLocationsFile = (content: string, fileName: string) => {
     const lines = content.trim().split('\n');
     const locationsMap = new Map<string, MaxMindLocation>();
     
@@ -256,7 +257,17 @@ export const IPRangeProcessor = () => {
     });
 
     setMaxmindLocations(locationsMap);
-    setUploadedFiles(prev => ({ ...prev, locations: true }));
+    setUploadedFiles(prev => ({ ...prev, locations: true, locationsFile: fileName }));
+    setFileType('maxmind');
+    
+    // Update file names
+    setUploadedFileNames(prev => {
+      const newNames = [...prev];
+      if (!newNames.includes(fileName)) {
+        newNames.push(fileName);
+      }
+      return newNames;
+    });
     
     // If we already have blocks, process the combined data
     if (maxmindBlocks.length > 0) {
@@ -264,7 +275,7 @@ export const IPRangeProcessor = () => {
     }
   };
 
-  const handleMaxMindBlocksFile = (content: string, _fileName: string) => {
+  const handleMaxMindBlocksFile = (content: string, fileName: string) => {
     const lines = content.trim().split('\n');
     const blocks: MaxMindBlock[] = [];
     
@@ -288,7 +299,17 @@ export const IPRangeProcessor = () => {
     });
 
     setMaxmindBlocks(blocks);
-    setUploadedFiles(prev => ({ ...prev, blocks: true }));
+    setUploadedFiles(prev => ({ ...prev, blocks: true, blocksFile: fileName }));
+    setFileType('maxmind');
+    
+    // Update file names
+    setUploadedFileNames(prev => {
+      const newNames = [...prev];
+      if (!newNames.includes(fileName)) {
+        newNames.push(fileName);
+      }
+      return newNames;
+    });
     
     // If we already have locations, process the combined data
     if (maxmindLocations.size > 0) {
@@ -358,7 +379,6 @@ export const IPRangeProcessor = () => {
     const sortedRanges = sortAndCacheRanges(ranges);
     setAllRanges(sortedRanges);
     setAvailableCountries(countries);
-    setFileType('maxmind');
     setSelectedCountry('');
     setIpRanges([]);
     resetProfiles();
@@ -599,14 +619,14 @@ export const IPRangeProcessor = () => {
     return currentPercentage > 0;
   };
 
-  // Repetition distribution functions
+  // Repetition rule management functions
   const addRepetitionRule = () => {
-    const totalPercentage = getTotalRepetitionPercentage();
-    const remainingPercentage = Math.max(0, 100 - totalPercentage);
+    const currentTotal = getRepetitionTotal();
+    const remainingPercentage = Math.max(0, 100 - currentTotal);
     
     const newRule: RepetitionRule = {
       id: nextRepetitionId.toString(),
-      repetitions: 1,
+      count: 1,
       percentage: remainingPercentage
     };
     
@@ -619,20 +639,28 @@ export const IPRangeProcessor = () => {
     setRepetitionRules(repetitionRules.filter(rule => rule.id !== id));
   };
 
-  const updateRepetitionRule = (id: string, repetitions: number, percentage: number) => {
+  const updateRepetitionCount = (id: string, count: number) => {
     setRepetitionRules(repetitionRules.map(rule => 
       rule.id === id 
-        ? { ...rule, repetitions: Math.max(1, repetitions), percentage: Math.max(0, Math.min(100, percentage)) }
+        ? { ...rule, count: Math.max(1, count) }
         : rule
     ));
   };
 
-  const getTotalRepetitionPercentage = () => {
+  const updateRepetitionPercentage = (id: string, percentage: number) => {
+    setRepetitionRules(repetitionRules.map(rule => 
+      rule.id === id 
+        ? { ...rule, percentage: Math.max(0, Math.min(100, percentage)) }
+        : rule
+    ));
+  };
+
+  const getRepetitionTotal = () => {
     return repetitionRules.reduce((sum, rule) => sum + rule.percentage, 0);
   };
 
   const canIncreaseRepetitionPercentage = () => {
-    return getTotalRepetitionPercentage() < 100;
+    return getRepetitionTotal() < 100;
   };
 
   const canDecreaseRepetitionPercentage = (currentPercentage: number) => {
@@ -691,50 +719,27 @@ export const IPRangeProcessor = () => {
 
   const generateIPsWithRepetition = (baseIPs: string[]): string[] => {
     const result: string[] = [];
-    const totalRepetitionPercentage = getTotalRepetitionPercentage();
+    const ipPool: string[] = [];
     
-    if (totalRepetitionPercentage !== 100) {
-      alert('Repetition distribution must total 100%');
-      return baseIPs;
-    }
-    
-    // Create repetition plan
-    const repetitionPlan: { ip: string; repetitions: number }[] = [];
-    
+    // Create IP pool based on repetition rules
     repetitionRules.forEach(rule => {
       const count = Math.floor((rule.percentage / 100) * baseIPs.length);
       for (let i = 0; i < count; i++) {
-        if (repetitionPlan.length < baseIPs.length) {
-          repetitionPlan.push({
-            ip: baseIPs[repetitionPlan.length],
-            repetitions: rule.repetitions
-          });
+        const ip = baseIPs[i % baseIPs.length];
+        // Add this IP 'rule.count' times to the pool
+        for (let j = 0; j < rule.count; j++) {
+          ipPool.push(ip);
         }
       }
     });
     
-    // Fill any remaining IPs with single repetition
-    while (repetitionPlan.length < baseIPs.length) {
-      repetitionPlan.push({
-        ip: baseIPs[repetitionPlan.length],
-        repetitions: 1
-      });
-    }
-    
-    // Generate final list with repetitions
-    repetitionPlan.forEach(plan => {
-      for (let i = 0; i < plan.repetitions; i++) {
-        result.push(plan.ip);
-      }
-    });
-    
-    // Shuffle the result to distribute repetitions randomly
-    for (let i = result.length - 1; i > 0; i--) {
+    // Shuffle the pool to randomize distribution
+    for (let i = ipPool.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
-      [result[i], result[j]] = [result[j], result[i]];
+      [ipPool[i], ipPool[j]] = [ipPool[j], ipPool[i]];
     }
     
-    return result;
+    return ipPool.slice(0, numAddresses);
   };
 
   const generateAndDownloadIPs = () => {
@@ -766,8 +771,9 @@ export const IPRangeProcessor = () => {
       return;
     }
 
-    const totalRepetitionPercentage = getTotalRepetitionPercentage();
-    if (totalRepetitionPercentage !== 100) {
+    // Validate repetition rules
+    const repetitionTotal = getRepetitionTotal();
+    if (repetitionTotal !== 100) {
       alert('Repetition distribution must total 100%');
       return;
     }
@@ -830,41 +836,6 @@ export const IPRangeProcessor = () => {
     }, 10);
   };
 
-  const getStatusMessage = () => {
-    if (processing) {
-      return `🔄 ${processingFile}`;
-    }
-    
-    if (fileType === 'json' && ipRanges.length > 0) {
-      return `✅ Loaded ${ipRanges.length} IP ranges from JSON file`;
-    } else if (fileType === 'csv') {
-      if (selectedCountry === '' && !useProfiles) {
-        return `✅ Loaded CSV file with ${availableCountries.length} countries. Please select a country or use profiles.`;
-      } else if (useProfiles) {
-        return `✅ Loaded CSV file with ${availableCountries.length} countries. Using generation profiles.`;
-      } else {
-        const selectedCountryName = availableCountries.find(c => c.code === selectedCountry)?.name || selectedCountry;
-        return `✅ Loaded ${ipRanges.length} IP ranges for ${selectedCountryName}`;
-      }
-    } else if (fileType === 'maxmind') {
-      const { locations, blocks } = uploadedFiles;
-      if (!locations || !blocks) {
-        const missing = [];
-        if (!locations) missing.push('GeoLite2-Country-Locations-en.csv');
-        if (!blocks) missing.push('GeoLite2-Country-Blocks-IPv4.csv');
-        return `⚠️ MaxMind format detected. Please upload: ${missing.join(' and ')}`;
-      } else if (selectedCountry === '' && !useProfiles) {
-        return `✅ Loaded MaxMind data with ${availableCountries.length} countries. Please select a country or use profiles.`;
-      } else if (useProfiles) {
-        return `✅ Loaded MaxMind data with ${availableCountries.length} countries. Using generation profiles.`;
-      } else {
-        const selectedCountryName = availableCountries.find(c => c.code === selectedCountry)?.name || selectedCountry;
-        return `✅ Loaded ${ipRanges.length} IP ranges for ${selectedCountryName} (MaxMind)`;
-      }
-    }
-    return null;
-  };
-
   const getUploadInstructions = () => {
     if (processing) {
       return processingFile;
@@ -909,31 +880,51 @@ export const IPRangeProcessor = () => {
     return hasCountryData() && availableCountries.length > 0;
   };
 
-  const hasReferenceData = () => {
-    return fileType !== null && allRanges.length > 0;
-  };
-
-  const getFileFormatDisplay = () => {
-    switch (fileType) {
-      case 'json':
-        return 'JSON Format';
-      case 'csv':
-        return 'CSV Format';
-      case 'maxmind':
-        return 'MaxMind GeoLite2 Format';
-      default:
-        return 'Unknown Format';
+  const isDataLoaded = () => {
+    if (fileType === 'json') {
+      return allRanges.length > 0;
+    } else if (fileType === 'csv') {
+      return allRanges.length > 0 && availableCountries.length > 0;
+    } else if (fileType === 'maxmind') {
+      return uploadedFiles.locations && uploadedFiles.blocks && allRanges.length > 0 && availableCountries.length > 0;
     }
+    return false;
   };
 
-  const getMissingFilesMessage = () => {
+  const getFileStatusMessage = () => {
+    if (processing) {
+      return `🔄 ${processingFile}`;
+    }
+    
+    if (fileType === 'json' && allRanges.length > 0) {
+      return `✅ JSON format detected - ${allRanges.length.toLocaleString()} IP ranges loaded`;
+    } else if (fileType === 'csv' && allRanges.length > 0) {
+      return `✅ CSV format detected - ${allRanges.length.toLocaleString()} IP ranges from ${availableCountries.length} countries`;
+    } else if (fileType === 'maxmind') {
+      const { locations, blocks } = uploadedFiles;
+      if (locations && blocks && allRanges.length > 0) {
+        return `✅ MaxMind format complete - ${allRanges.length.toLocaleString()} IP ranges from ${availableCountries.length} countries`;
+      } else if (locations && !blocks) {
+        return `⚠️ MaxMind format detected - Locations file loaded, still need Blocks file`;
+      } else if (!locations && blocks) {
+        return `⚠️ MaxMind format detected - Blocks file loaded, still need Locations file`;
+      } else if (locations && blocks && allRanges.length === 0) {
+        return `⚠️ MaxMind files loaded but no data processed - please check file formats`;
+      }
+    }
+    
+    return null;
+  };
+
+  const getMissingFileMessage = () => {
     if (fileType === 'maxmind') {
       const { locations, blocks } = uploadedFiles;
-      const missing = [];
-      if (!locations) missing.push('GeoLite2-Country-Locations-en.csv');
-      if (!blocks) missing.push('GeoLite2-Country-Blocks-IPv4.csv');
-      if (missing.length > 0) {
-        return `Missing required files: ${missing.join(', ')}`;
+      if (!locations && !blocks) {
+        return 'Please upload both GeoLite2-Country-Locations-en.csv and GeoLite2-Country-Blocks-IPv4.csv files';
+      } else if (!locations) {
+        return 'Still need: GeoLite2-Country-Locations-en.csv';
+      } else if (!blocks) {
+        return 'Still need: GeoLite2-Country-Blocks-IPv4.csv';
       }
     }
     return null;
@@ -957,19 +948,21 @@ export const IPRangeProcessor = () => {
                 <div className="flex items-center justify-center space-x-2">
                   <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500"></div>
                   <p className="text-blue-600 dark:text-blue-400 font-medium">
-                    {getStatusMessage()}
+                    {processingFile}
                   </p>
                 </div>
               ) : (
                 <div>
+                  <div className="mb-4">
+                    <svg className="mx-auto h-8 w-8 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                  </div>
                   <p className="text-green-600 dark:text-green-400 font-medium">
-                    {getStatusMessage()}
+                    Files uploaded successfully
                   </p>
                   <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
-                    {fileType === 'maxmind' && (!uploadedFiles.locations || !uploadedFiles.blocks)
-                      ? getUploadInstructions()
-                      : 'Drop new file(s) to replace'
-                    }
+                    Drop new file(s) to replace
                   </p>
                 </div>
               )}
@@ -991,59 +984,59 @@ export const IPRangeProcessor = () => {
           )}
         </div>
 
-        {/* Loaded Files Information */}
-        {hasReferenceData() && (
-          <div className="mt-6 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
-            <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-3">Loaded Files</h3>
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-gray-600 dark:text-gray-300">Format:</span>
-                <span className="text-sm font-medium text-gray-900 dark:text-white">{getFileFormatDisplay()}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-gray-600 dark:text-gray-300">Files:</span>
-                <span className="text-sm font-medium text-gray-900 dark:text-white">
-                  {loadedFileNames.join(', ')}
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-gray-600 dark:text-gray-300">IP Ranges:</span>
-                <span className="text-sm font-medium text-gray-900 dark:text-white">
-                  {allRanges.length.toLocaleString()}
-                </span>
-              </div>
-              {availableCountries.length > 0 && (
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-gray-600 dark:text-gray-300">Countries:</span>
-                  <span className="text-sm font-medium text-gray-900 dark:text-white">
-                    {availableCountries.length}
-                  </span>
+        {/* File Status Display */}
+        {(fileType || processing) && (
+          <div className="mt-6 space-y-4">
+            {/* Uploaded Files List */}
+            {uploadedFileNames.length > 0 && (
+              <div>
+                <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Uploaded Files:</h3>
+                <div className="space-y-1">
+                  {uploadedFileNames.map((fileName, index) => (
+                    <div key={index} className="flex items-center space-x-2 text-sm text-gray-600 dark:text-gray-400">
+                      <svg className="h-4 w-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <span>{fileName}</span>
+                    </div>
+                  ))}
                 </div>
-              )}
-              {getMissingFilesMessage() && (
-                <div className="mt-2 p-2 bg-yellow-100 dark:bg-yellow-900/20 rounded border border-yellow-200 dark:border-yellow-800">
-                  <p className="text-sm text-yellow-800 dark:text-yellow-200">
-                    ⚠️ {getMissingFilesMessage()}
-                  </p>
-                </div>
-              )}
-            </div>
+              </div>
+            )}
+
+            {/* Status Message */}
+            {getFileStatusMessage() && (
+              <div className="p-4 rounded-lg bg-gray-50 dark:bg-gray-700">
+                <p className="text-sm font-medium text-gray-900 dark:text-white">
+                  {getFileStatusMessage()}
+                </p>
+              </div>
+            )}
+
+            {/* Missing File Warning */}
+            {getMissingFileMessage() && (
+              <div className="p-4 rounded-lg bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800">
+                <p className="text-sm font-medium text-yellow-800 dark:text-yellow-200">
+                  {getMissingFileMessage()}
+                </p>
+              </div>
+            )}
           </div>
         )}
       </div>
 
-      {/* Main Functionality - Only show when reference data is loaded */}
-      {hasReferenceData() && (
+      {/* Main Content - Only show when data is loaded */}
+      {isDataLoaded() && (
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md">
           {/* Tab Navigation */}
           <div className="border-b border-gray-200 dark:border-gray-700">
-            <nav className="flex space-x-8 px-6" aria-label="Tabs">
+            <nav className="-mb-px flex space-x-8 px-6">
               <button
                 onClick={() => setMode('generate')}
                 className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors duration-200 ${
                   mode === 'generate'
                     ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 hover:border-gray-300'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300'
                 }`}
               >
                 Generate IP Addresses
@@ -1055,7 +1048,7 @@ export const IPRangeProcessor = () => {
                   mode === 'lookup' && hasCountryData()
                     ? 'border-blue-500 text-blue-600 dark:text-blue-400'
                     : hasCountryData()
-                    ? 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 hover:border-gray-300'
+                    ? 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300'
                     : 'border-transparent text-gray-400 dark:text-gray-500 cursor-not-allowed'
                 }`}
               >
@@ -1071,6 +1064,90 @@ export const IPRangeProcessor = () => {
           <div className="p-6">
             {mode === 'generate' ? (
               <div className="space-y-6">
+                {/* Repetition Distribution */}
+                <div>
+                  <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
+                    Repetition Distribution
+                  </h3>
+                  <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                    Configure how many times IP addresses should be repeated in the generated file.
+                  </p>
+                  
+                  <div className="space-y-3">
+                    {repetitionRules.map((rule) => (
+                      <div key={rule.id} className="flex items-center space-x-3 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                        <div className="flex items-center space-x-2">
+                          <input
+                            type="number"
+                            min="1"
+                            value={rule.count}
+                            onChange={(e) => updateRepetitionCount(rule.id, parseInt(e.target.value) || 1)}
+                            className="w-20 text-center rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-600 dark:border-gray-500 dark:text-white"
+                            disabled={processing}
+                          />
+                          <span className="text-sm text-gray-600 dark:text-gray-300">usage(s)</span>
+                        </div>
+                        
+                        <div className="flex items-center space-x-2">
+                          <button
+                            onClick={() => updateRepetitionPercentage(rule.id, rule.percentage - 1)}
+                            disabled={processing || !canDecreaseRepetitionPercentage(rule.percentage)}
+                            className="w-8 h-8 flex items-center justify-center bg-gray-200 hover:bg-gray-300 dark:bg-gray-600 dark:hover:bg-gray-500 rounded-md text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            -
+                          </button>
+                          
+                          <input
+                            type="number"
+                            min="0"
+                            max="100"
+                            value={rule.percentage}
+                            onChange={(e) => updateRepetitionPercentage(rule.id, parseInt(e.target.value) || 0)}
+                            className="w-16 text-center rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-600 dark:border-gray-500 dark:text-white"
+                            disabled={processing}
+                          />
+                          
+                          <button
+                            onClick={() => updateRepetitionPercentage(rule.id, rule.percentage + 1)}
+                            disabled={processing || !canIncreaseRepetitionPercentage()}
+                            className="w-8 h-8 flex items-center justify-center bg-gray-200 hover:bg-gray-300 dark:bg-gray-600 dark:hover:bg-gray-500 rounded-md text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            +
+                          </button>
+                          
+                          <span className="text-sm text-gray-600 dark:text-gray-300 w-6">%</span>
+                        </div>
+                        
+                        <button
+                          onClick={() => removeRepetitionRule(rule.id)}
+                          disabled={processing || repetitionRules.length <= 1}
+                          className="w-8 h-8 flex items-center justify-center bg-red-500 hover:bg-red-600 text-white rounded-md text-sm font-medium disabled:bg-gray-400 disabled:cursor-not-allowed"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ))}
+                    
+                    <div className="flex items-center justify-between">
+                      <button
+                        onClick={addRepetitionRule}
+                        disabled={processing}
+                        className="px-3 py-1 bg-blue-500 hover:bg-blue-600 text-white rounded-md text-sm font-medium transition-colors duration-200 disabled:bg-gray-400"
+                      >
+                        Add Rule
+                      </button>
+                      
+                      <div className={`px-3 py-1 rounded-md text-sm font-medium ${
+                        getRepetitionTotal() === 100 
+                          ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' 
+                          : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
+                      }`}>
+                        Total: {getRepetitionTotal()}%
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
                 {/* Profile Toggle */}
                 {canUseProfiles() && (
                   <div>
@@ -1243,7 +1320,7 @@ export const IPRangeProcessor = () => {
 
                 {/* Number of Addresses Input */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                     Number of IP addresses to generate
                   </label>
                   <input
@@ -1251,125 +1328,17 @@ export const IPRangeProcessor = () => {
                     min="1"
                     value={numAddresses}
                     onChange={(e) => setNumAddresses(Math.max(1, parseInt(e.target.value) || 1))}
-                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                     disabled={processing}
                   />
-                </div>
-
-                {/* Repetition Distribution */}
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-lg font-medium text-gray-900 dark:text-white">
-                      Repetition Distribution
-                    </h3>
-                    <button
-                      onClick={addRepetitionRule}
-                      disabled={processing || !canIncreaseRepetitionPercentage()}
-                      className="px-3 py-1 bg-green-500 hover:bg-green-600 text-white rounded-md text-sm font-medium transition-colors duration-200 disabled:bg-gray-400"
-                    >
-                      Add Rule
-                    </button>
-                  </div>
-                  <p className="text-sm text-gray-600 dark:text-gray-400">
-                    Specify how many times IP addresses should be repeated in the generated file
-                  </p>
-
-                  {repetitionRules.map((rule) => (
-                    <div key={rule.id} className="flex items-center space-x-3 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                      <div className="flex items-center space-x-2">
-                        <input
-                          type="number"
-                          min="1"
-                          value={rule.repetitions}
-                          onChange={(e) => updateRepetitionRule(rule.id, parseInt(e.target.value) || 1, rule.percentage)}
-                          className="w-20 text-center rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-600 dark:border-gray-500 dark:text-white"
-                          disabled={processing}
-                        />
-                        <span className="text-sm text-gray-600 dark:text-gray-300">usage(s)</span>
-                      </div>
-                      
-                      <div className="flex items-center space-x-2">
-                        <button
-                          onClick={() => updateRepetitionRule(rule.id, rule.repetitions, rule.percentage - 1)}
-                          disabled={processing || !canDecreaseRepetitionPercentage(rule.percentage)}
-                          className="w-8 h-8 flex items-center justify-center bg-gray-200 hover:bg-gray-300 dark:bg-gray-600 dark:hover:bg-gray-500 rounded-md text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          -
-                        </button>
-                        
-                        <input
-                          type="number"
-                          min="0"
-                          max="100"
-                          value={rule.percentage}
-                          onChange={(e) => updateRepetitionRule(rule.id, rule.repetitions, parseInt(e.target.value) || 0)}
-                          className="w-16 text-center rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-600 dark:border-gray-500 dark:text-white"
-                          disabled={processing}
-                        />
-                        
-                        <button
-                          onClick={() => updateRepetitionRule(rule.id, rule.repetitions, rule.percentage + 1)}
-                          disabled={processing || !canIncreaseRepetitionPercentage()}
-                          className="w-8 h-8 flex items-center justify-center bg-gray-200 hover:bg-gray-300 dark:bg-gray-600 dark:hover:bg-gray-500 rounded-md text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          +
-                        </button>
-                        
-                        <span className="text-sm text-gray-600 dark:text-gray-300 w-6">%</span>
-                      </div>
-                      
-                      <button
-                        onClick={() => removeRepetitionRule(rule.id)}
-                        disabled={processing || repetitionRules.length <= 1}
-                        className="w-8 h-8 flex items-center justify-center bg-red-500 hover:bg-red-600 text-white rounded-md text-sm font-medium disabled:bg-gray-400"
-                      >
-                        ×
-                      </button>
-                    </div>
-                  ))}
-
-                  {/* Total Repetition Percentage Display */}
-                  <div className={`p-3 rounded-lg border ${
-                    getTotalRepetitionPercentage() === 100 
-                      ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800' 
-                      : getTotalRepetitionPercentage() > 100
-                      ? 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'
-                      : 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800'
-                  }`}>
-                    <div className="flex items-center justify-between">
-                      <span className={`text-sm font-medium ${
-                        getTotalRepetitionPercentage() === 100 
-                          ? 'text-green-800 dark:text-green-200' 
-                          : getTotalRepetitionPercentage() > 100
-                          ? 'text-red-800 dark:text-red-200'
-                          : 'text-blue-800 dark:text-blue-200'
-                      }`}>
-                        Total Repetition Distribution
-                      </span>
-                      <span className={`text-sm font-bold ${
-                        getTotalRepetitionPercentage() === 100 
-                          ? 'text-green-800 dark:text-green-200' 
-                          : getTotalRepetitionPercentage() > 100
-                          ? 'text-red-800 dark:text-red-200'
-                          : 'text-blue-800 dark:text-blue-200'
-                      }`}>
-                        {getTotalRepetitionPercentage()}%
-                      </span>
-                    </div>
-                    {getTotalRepetitionPercentage() !== 100 && (
-                      <p className="text-xs text-red-600 dark:text-red-400 mt-1">
-                        Total percentage must equal 100%. Please adjust the values.
-                      </p>
-                    )}
-                  </div>
                 </div>
 
                 {/* Generate Button */}
                 <button
                   onClick={generateAndDownloadIPs}
-                  disabled={loading || processing || (useProfiles ? countryProfiles.length === 0 || getTotalPercentage() > 100 : ipRanges.length === 0) || getTotalRepetitionPercentage() !== 100}
-                  className={`w-full px-4 py-3 rounded-md text-white font-medium transition-all duration-200 flex items-center justify-center space-x-2
-                    ${loading || processing || (useProfiles ? countryProfiles.length === 0 || getTotalPercentage() > 100 : ipRanges.length === 0) || getTotalRepetitionPercentage() !== 100
+                  disabled={loading || processing || getRepetitionTotal() !== 100 || (useProfiles ? countryProfiles.length === 0 || getTotalPercentage() > 100 : ipRanges.length === 0)}
+                  className={`w-full px-4 py-2 rounded-md text-white font-medium transition-all duration-200 flex items-center justify-center space-x-2
+                    ${loading || processing || getRepetitionTotal() !== 100 || (useProfiles ? countryProfiles.length === 0 || getTotalPercentage() > 100 : ipRanges.length === 0)
                       ? 'bg-gray-400 cursor-not-allowed'
                       : 'bg-blue-500 hover:bg-blue-600 hover:shadow-lg transform hover:scale-[1.02]'
                     }
@@ -1408,7 +1377,7 @@ export const IPRangeProcessor = () => {
                 <button
                   onClick={performIPLookup}
                   disabled={lookupLoading || processing || !hasCountryData() || !ipLookupText.trim()}
-                  className={`w-full px-4 py-3 rounded-md text-white font-medium transition-all duration-200 flex items-center justify-center space-x-2
+                  className={`w-full px-4 py-2 rounded-md text-white font-medium transition-all duration-200 flex items-center justify-center space-x-2
                     ${lookupLoading || processing || !hasCountryData() || !ipLookupText.trim()
                       ? 'bg-gray-400 cursor-not-allowed'
                       : 'bg-green-500 hover:bg-green-600 hover:shadow-lg transform hover:scale-[1.02]'
