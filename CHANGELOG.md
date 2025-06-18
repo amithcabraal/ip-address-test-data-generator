@@ -2,6 +2,42 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.6.2] - 2025-01-27
+
+### Fixed
+- **Repetition Distribution Logic**: Corrected repetition calculation to match user expectations
+  - Fixed logic so requesting 10,000 IPs generates exactly 10,000 unique IPs with repetition applied
+  - Total file lines now exceed the requested number based on repetition distribution
+  - Example: 10,000 IPs with 97% single use + 3% quad use = 10,000 unique IPs but 10,291 total lines
+  - Repetition is distributed randomly throughout the file, not sequentially
+
+### Enhanced
+- **Total Lines Display**: Added prominent display showing total lines to be generated
+  - Large, centered display of total lines that will be created in the output file
+  - Clear distinction between unique IPs requested and total lines generated
+  - Detailed breakdown showing calculation for each repetition rule
+  - Purple-themed display box to distinguish from other metrics
+- **User Interface Improvements**: Enhanced clarity of repetition distribution section
+  - Moved unique IP count input to top of generation section
+  - Added helpful text explaining the difference between unique IPs and total lines
+  - Better visual hierarchy with clear separation of concepts
+
+### Technical Improvements
+- **Calculation Logic**: Refined repetition calculation algorithm
+  - `calculateTotalLines()` function now correctly computes total output lines
+  - Proper percentage-based allocation of unique IPs to repetition rules
+  - Random distribution of repeated IPs throughout the final output
+- **User Experience**: Improved feedback and validation
+  - Clear explanation of how repetition affects final file size
+  - Better labeling to distinguish unique IPs from total output lines
+  - Enhanced visual feedback showing the impact of repetition settings
+
+### User Experience
+- **Clarity**: Better explanation of repetition distribution concept
+  - Clear labeling of "unique IP addresses" vs "total lines to be generated"
+  - Visual breakdown showing how each rule contributes to the final count
+  - Prominent display of the multiplication effect of repetition rules
+
 ## [1.6.1] - 2025-01-27
 
 ### Fixed
